@@ -30,6 +30,10 @@ jobs:
       - name: Clone project
         uses: actions/checkout@v3
 
+      - name: Update APT cache
+        run: |
+         sudo apt update
+
       - name: Setup Haskell
         uses: haskell-actions/setup@v2
         with:
