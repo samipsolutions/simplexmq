@@ -11,16 +11,24 @@ on:
 
 jobs:
   build:
-    name: build-${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    name: build-${{ matrix.os }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.builder }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-20.04
             platform_name: 20_04-x86-64
+            arch: amd64
+            builder: ubuntu-latest
           - os: ubuntu-22.04
             platform_name: 22_04-x86-64
+            arch: amd64
+            builder: buildjet-4vcpu-ubuntu-2204
+          - os: ubuntu-22.04
+            platform_name: 22_04-aarch64
+            arch: arm64
+            builder: buildjet-4vcpu-ubuntu-2204-arm
     steps:
       - name: Clone project
         uses: actions/checkout@v3
