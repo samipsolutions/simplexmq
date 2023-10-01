@@ -1,37 +1,40 @@
-name: Build and push Docker image to Docker Hub
+name: Build and push Docker image
 
 on:
   push:
     tags:
       - "v*"
 
+env:
+  DOCKER_CLI_EXPERIMENTAL: enabled
+
 jobs:
-  build-and-push:
-    name: Build and push Docker image
+  build:
+    name: Build Docker image
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - app: smp-server
-            app_port: 5223
-          - app: xftp-server
-            app_port: 443 
+        app: [smp-server, xftp-server]
+        app_port: [5223, 443]
+        arch: [amd64, arm64]
+        builder: [buildjet-4vcpu-ubuntu-2204,buildjet-8vcpu-ubuntu-2204-arm]
     steps:
       - name: Clone project
         uses: actions/checkout@v3
 
-      - name: Log in to Docker Hub
+      - name: Log in to Harbor
         uses: docker/login-action@v2
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+          registry: registry.samipsolutions.fi
+          username: ${{ secrets.HARBOR_USER }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
 
       - name: Extract metadata for Docker image
         id: meta
         uses: docker/metadata-action@v4
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.app }}
+          images: registry.samipsolutions.fi/library/${{ matrix.app }}
           flavor: |
             latest=auto
           tags: |
@@ -39,12 +42,30 @@ jobs:
             type=semver,pattern=v{{major}}.{{minor}}
             type=semver,pattern=v{{major}}
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v4
+      - name: Build Docker image
+        run: |
+          docker build --build-arg APP=${{ matrix.app }} --build-arg APP_PORT=${{ matrix.app_port }} -t ${{ steps.meta.outputs.tags }} --platform linux/${{ matrix.arch }} .
+          docker push ${{ steps.meta.outputs.tags }}
+
+  merge-and-push:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to Harbor registry
+        uses: docker/login-action@v2
         with:
-          push: true
-          build-args: |
-            APP=${{ matrix.app }}
-            APP_PORT=${{ matrix.app_port }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          registry: registry.samipsolutions.fi
+          username: ${{ secrets.HARBOR_USER }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
+
+      - name: Create and push multi-arch images
+        run: |
+          docker manifest create registry.samipsolutions.fi/library/smp-server:latest registry.samipsolutions.fi/library/smp-server:latest-amd64 registry.samipsolutions.fi/library/smp-server:latest-arm64
+          docker manifest annotate registry.samipsolutions.fi/library/smp-server:latest registry.samipsolutions.fi/library/smp-server:latest-amd64 --arch amd64
+          docker manifest annotate registry.samipsolutions.fi/library/smp-server:latest registry.samipsolutions.fi/library/smp-server:latest-arm64 --arch arm64
+          docker manifest push registry.samipsolutions.fi/library/smp-server:latest
+
+          docker manifest create registry.samipsolutions.fi/library/xftp-server:latest registry.samipsolutions.fi/library/xftp-server:latest-amd64 registry.samipsolutions.fi/library/xftp-server:latest-arm64
+          docker manifest annotate registry.samipsolutions.fi/library/xftp-server:latest registry.samipsolutions.fi/library/xftp-server:latest-amd64 --arch amd64
+          docker manifest annotate registry.samipsolutions.fi/library/xftp-server:latest registry.samipsolutions.fi/library/xftp-server:latest-arm64 --arch arm64
+          docker manifest push registry.samipsolutions.fi/library/xftp-server:latest
